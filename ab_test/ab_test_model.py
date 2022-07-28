@@ -12,6 +12,7 @@ import pandas as pd
 import statsmodels.stats.api as sms
 import scipy.stats as scs
 import matplotlib.pyplot as plt
+from scipy.stats import norm
 plt.style.use('ggplot')
 
 #import data
@@ -20,6 +21,7 @@ df = raw_data.copy()
 
 print("Number of rows: ", df.shape[0], " Number of columns: ", df.shape[1])
 df.head()
+print(df.info())
 
 print(df['group'].value_counts())
 print(df['landing_page'].value_counts())
@@ -27,108 +29,99 @@ print(df['landing_page'].value_counts())
 
 ## as seen from the group and the landing page number both numbers are different than each other. This means some data points are duplicated.
 
-# df[df['group'] == 'control'] 
-# pd.Index(df.loc[(df['group'] == 'control') & (df['landing_page'] == 'new_page')])
+c1 = df['group']=='control'
+c2 = df['landing_page']=='new_page'
 
-d1 = df.loc[(df['group'] == 'treatment') & (df['landing_page'] == 'old_page')]
-d2 = df.loc[(df['group'] == 'control') & (df['landing_page'] == 'new_page')]
-d1.index
+c3 = df['group']=='treatment'
+c4 = df['landing_page']=='old_page'
 
-df = df.drop(d1.index)
-df = df.drop(d2.index)
+drop1 = df[c1 & c2].index
 
-#some of the control group saw the new_page and some tretment group saw the old_page - delete these instances
-mask1 = (df["group"] == "control") & (df["landing_page"] == "new_page")
-index_to_drop1 = df[mask1].index
-df = df.drop(index_to_drop1)
+drop2 = df[c3 & c4].index
 
-mask2 = (df["group"] == "treatment") & (df["landing_page"] == "old_page")
-index_to_drop2 = df[mask2].index
-df = df.drop(index_to_drop2)
+df = df.drop(drop1)
+df = df.drop(drop2).reset_index(drop = True)
+print(df.info())
 
-print(df.shape)
-df["group"].value_counts()
+print(df['group'].value_counts())
+print(df['landing_page'].value_counts())
 
-#drop duplicated users
-df.drop_duplicates(subset ='user_id',keep ='first',inplace = True)
-df.head(3)
+## For this dataset two sample Z-test will be applied. Because number of samples
+## are high enough to approach normal distribution
+## For this kind of test one can either use proportion of click through rate (CTR) or 
+## mean value of the converstion rates 
+## In this example I will follow the proportions 
 
-converted_control_num = df[df['group'] == 'control'].groupby(['converted'])['group'].count()[1]
-converted_treatment_num  = df[df['group'] == 'treatment'].groupby(['converted'])['group'].count()[1]
+##  As the first step of our test we need to define null and altenative hypothesis 
+## our null hypothesis is
 
-control_num = len(df[df['group'] == 'control'])
-treatment_num = len(df[df['group'] == 'treatment'])
+"""our null hypothesis is 
+$H_0 : p_{con} = p_{exp}$
+our alternate hypothesis is 
+$H_1 : p_{con} \neq p_{exp}$
 
-print('total_control_count :',control_num)
-print('total_treatment_count :',treatment_num)
-
-print('converted_control_count :',converted_control_num)
-print('converted_treatment_count :',converted_treatment_num)
-
-def prop(conversion, total):
-    return conversion/total
-
-def standard_error(prob, total):
-    return  np.sqrt(prob * (1-prob)) / np.sqrt(total)
-
-control_conversion_prop = prop(converted_control_num,control_num)
-treatment_conversion_prop = prop(converted_treatment_num,treatment_num)
-total_conversion_prop = prop((converted_control_num + converted_treatment_num), (control_num+treatment_num))
-
-control_error = standard_error(control_conversion_prop,control_num)
-treatment_error = standard_error(treatment_conversion_prop,treatment_num)
-
-
-print('control_conversion_proportion :', control_conversion_prop)
-print('treatment_conversion_proportion :', treatment_conversion_prop)
-print('total_conversion_proportion :', total_conversion_prop)
-
-print('treatment_standard_error :', treatment_error)
-print('control_standard_error :', control_error)
-
-x = np.linspace(0.114, .125, 1000)
-yt = scs.norm(treatment_conversion_prop, treatment_error).pdf(x)
-plt.plot(x, yt, '-.',label='treatment')
-plt.axvline(x=treatment_conversion_prop, c='red', alpha=0.5)
-plt.legend()
-
-x = np.linspace(0.114, .125, 1000)
-yc = scs.norm(control_conversion_prop, control_error).pdf(x)
-plt.plot(x, yc,'--',label='control')
-plt.axvline(x=control_conversion_prop, c='blue', alpha=0.5)
-plt.legend()
-
-plt.xlabel('Converted Proportion')
-plt.ylabel('PDF')
-
-d_hat = treatment_conversion_prop - control_conversion_prop
-
-print('d_hat(minimum_detectable_error)',d_hat)
-
-z_score = abs((treatment_conversion_prop - control_conversion_prop))/np.sqrt(total_conversion_prop*(1-total_conversion_prop)*(1/control_num + 1/treatment_num))
-print(z_score)
-
-alpha = 0.05
-z_critical = 1.96 ### according to critical  alpha for two tailed test
-#### after that point if z_score falls in rejection region and rejection region is higher than the z_critical_value
-
-if z_score > z_critical :
-    print('null hypothesis cannot be rejected becase z_score is higher that z_critical value')
-
-if z_score < z_critical :
-    print('null hypothesis can be rejected becase z_score is lower that z_critical value')
-
-"""n =$\frac{2p_{total}(1 - p_{total})(Z_{β}+Z_{α/2})^2}{(p_b-p_a)^2}$ 
-where $p_{total}$ is total conversion proportion 
-$p_a$ is treatment proportion 
-$p_b$ is control proportion
-$Z_{β}$ is level of statistical power 
-$Z_{α/2}$ is z score that corresponds to the level significance  or confidence level
+$p_{con} = \frac{X_{con}}{N_{con}}$ , 
+$p_{exp} = \frac{X_{exp}}{N_{exp}}$
 """
 
-# # Z value from z table for 80% is 0.84
-# z_beta = 0.84
-# z_beta = 1.28
-# # z_beta = 0.
-((2*total_conversion_prop)*(1- total_conversion_prop)*(z_critical + z_beta)**2)/(treatment_conversion_prop - control_conversion_prop)**2
+df.head(3)
+
+print(df['converted'].unique())
+### conversion value corresponds to 1 therefore if we aggregate sum() function with groupby 
+### we can achieve the total number of conversions
+control_conversion_number = df.groupby(['group'])['converted'].sum()[0]
+treatment_conversion_number = df.groupby(['group'])['converted'].sum()[1]
+
+print('control_conversion_number', control_conversion_number)
+print('treatment_conversion_number', treatment_conversion_number)
+
+control_number = df.groupby(['group'])['converted'].count()[0]
+treatment_number = df.groupby(['group'])['converted'].count()[1]
+
+print('total number of control group :', control_number )
+print('total number of treatment group :', treatment_number )
+
+p_con = control_conversion_number/ control_number
+p_trt = treatment_conversion_number/ treatment_number
+
+print('control conversion probability :', p_con)
+print('treatment conversion probability :', p_trt)
+
+"""As next step one can calculate the pooled probability using following formula:
+$p_{pool} = \frac{X_{con}+X_{exp}}{N_{con}+N_{exp}}$
+
+and pooled variance :
+$σ^2_{pool} = p_{pool}(1-p_{pool})(\frac{1}{N_{con}} +\frac{1}{N_{exp}})$ \\
+and standard error : $\sigma = \sqrt{σ^2_{pool} }$
+"""
+
+p_pool = (control_conversion_number +treatment_conversion_number )/(control_number+treatment_number)
+
+print('pooled probability', p_pool)
+
+pool_var = p_pool*(1-p_pool)*( (1/control_number) + (1/treatment_number ))
+print('pooled variance', pool_var)
+
+std_err = np.sqrt(pool_var)
+
+print('standard error:', std_err)
+
+test_stat = (p_con - p_trt) /(std_err)
+print('test statistics :', test_stat)
+p_value = norm.sf(test_stat)*2
+
+print('p_value', p_value)
+
+alpha  = 0.05 
+critical_value = 1.96 ### 
+conf_int = [(p_con-p_trt)-critical_value*std_err, (p_con-p_trt)+critical_value*std_err]
+
+print('confidence interval', conf_int)
+
+if np.abs(test_stat) >= critical_value:
+    print("reject the null")
+    print(p_value)
+
+else :
+    print('do not reject the null hypothesis')
 
